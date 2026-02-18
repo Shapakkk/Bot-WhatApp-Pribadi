@@ -1,0 +1,6 @@
+node_modules
+auth_info
+database/*.json
+config.json
+.pm2
+*.log
