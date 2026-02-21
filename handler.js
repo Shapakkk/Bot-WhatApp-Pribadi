@@ -1,58 +1,64 @@
 const fs = require('fs');
 const path = require('path');
 
-// Global Map untuk simpan command
 global.commands = new Map();
 
 const loadCommands = (dir) => {
-    const files = fs.readdirSync(path.join(__dirname, dir));
+    const fullDir = path.join(process.cwd(), dir);
+    if (!fs.existsSync(fullDir)) return;
+
+    const files = fs.readdirSync(fullDir);
     for (const file of files) {
-        const stat = fs.lstatSync(path.join(__dirname, dir, file));
+        const filePath = path.join(fullDir, file);
+        const stat = fs.lstatSync(filePath);
+
         if (stat.isDirectory()) {
             loadCommands(path.join(dir, file));
         } else if (file.endsWith('.js')) {
-            const cmdPath = path.join(__dirname, dir, file);
-            delete require.cache[require.resolve(cmdPath)];
-            const cmd = require(cmdPath);
-            global.commands.set(cmd.name, cmd);
+            try {
+                delete require.cache[require.resolve(filePath)];
+                const cmd = require(filePath);
+                if (cmd.name) global.commands.set(cmd.name, cmd);
+            } catch (e) {
+                console.error(`[ ERROR ] Gagal muat ${file}:`, e.message);
+            }
         }
     }
 };
 
 async function handler(sock, msg) {
     try {
-        const config = JSON.parse(fs.readFileSync('./config.json'));
+        const config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
         const from = msg.key.remoteJid;
-        
-        // Body Parser
-        const type = Object.keys(msg.message || {})[0];
-        const body = (type === 'conversation') ? msg.message.conversation :
-                     (type === 'extendedTextMessage') ? msg.message.extendedTextMessage.text :
-                     (type === 'imageMessage') ? msg.message.imageMessage.caption :
-                     (type === 'videoMessage') ? msg.message.videoMessage.caption : '';
 
-        if (!body.startsWith(config.prefix)) return;
+        const type = Object.keys(msg.message)[0];
+        let body = (type === 'conversation') ? msg.message.conversation :
+                   (type === 'extendedTextMessage') ? msg.message.extendedTextMessage.text :
+                   (type === 'imageMessage') ? msg.message.imageMessage.caption :
+                   (type === 'videoMessage') ? msg.message.videoMessage.caption : '';
+
+        if (!body || !body.startsWith(config.prefix)) return;
 
         const args = body.slice(config.prefix.length).trim().split(/ +/);
         const commandName = args.shift().toLowerCase();
-        
-        const cmd = global.commands.get(commandName);
+
+        // LOGIKA ALIASES: Cari di nama utama atau di array aliases
+        const cmd = global.commands.get(commandName) || 
+                    Array.from(global.commands.values()).find(c => c.aliases && c.aliases.includes(commandName));
+
         if (!cmd) return;
 
-        // DEBUG LOG
-        const sender = msg.key.participant || msg.key.remoteJid;
-        console.log(`[ CMD ] ${commandName} | Dari: ${sender.split('@')[0]} | Target: ${from}`);
-
-        // FUNGSI REPLY SAKTI (Supaya bot bales di grup dengan ngetag pesan)
         const reply = async (text) => {
             return await sock.sendMessage(from, { text: text }, { quoted: msg });
         };
 
-        // Kirim 'sock' dan 'msg' yang sudah dimodifikasi ke execute
+        const sender = msg.key.participant || msg.key.remoteJid;
+        console.log(`[ CMD ] .${commandName} (Alias dari ${cmd.name}) | Dari: ${sender.split('@')[0]}`);
+
         await cmd.execute(sock, msg, args, config, reply);
 
     } catch (err) {
-        console.error(`[ ERROR ] Handler:`, err.message);
+        console.error(`[ CRASH ] Handler Error:`, err);
     }
 }
 

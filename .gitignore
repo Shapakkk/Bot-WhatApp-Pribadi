@@ -4,3 +4,4 @@ database/*.json
 config.json
 .pm2
 *.log
+backup

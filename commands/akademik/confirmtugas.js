@@ -1,29 +1,56 @@
-const fs = require('fs');
+const fs = require('fs').promises;
 
 module.exports = {
     name: 'confirmtugas',
+    aliases: ['selesai'], // Tambahan Alias
     category: 'akademik',
-    async execute(sock, msg, args, config) {
-        const from = msg.key.remoteJid;
+    async execute(sock, msg, args, config, reply) {
         const target = args.join(' ').trim();
 
-        if (!target) return sock.sendMessage(from, { text: '❌ Masukkan nomor atau nama tugas!' });
+        try {
+            const dbPath = './database/academic.json';
+            const dataRaw = await fs.readFile(dbPath, 'utf8');
+            let db = JSON.parse(dataRaw);
+            const pendingTasks = db.tugas.filter(t => t.status === 'PENDING');
 
-        const dbPath = './database/academic.json';
-        let db = JSON.parse(fs.readFileSync(dbPath));
-        
-        let index = -1;
-        if (!isNaN(target)) {
-            index = parseInt(target) - 1;
-        } else {
-            index = db.tugas.findIndex(x => x.nama.toLowerCase() === target.toLowerCase());
+            if (pendingTasks.length === 0) return reply("📭 Nggak ada tugas pending yang bisa dikonfirmasi, Bre.");
+
+            // 1. FITUR AUTO-LIST: Jika input kosong
+            if (!target) {
+                let listTeks = `📝 *PILIH TUGAS YANG SELESAI*\n\n`;
+                pendingTasks.forEach((t, i) => {
+                    listTeks += `${i + 1}. *${t.nama}*\n   └ MK: ${t.mk}\n`;
+                });
+                listTeks += `\n──────────────────\n`;
+                listTeks += `💡 *Cara:* Ketik \`.selesai [Nomor]\`\n`;
+                listTeks += `Contoh: \`.selesai 1\``;
+                return reply(listTeks);
+            }
+
+            // 2. PROSES KONFIRMASI (Fix Index Mismatch)
+            let taskToFinish;
+            if (!isNaN(target)) {
+                const index = parseInt(target) - 1;
+                taskToFinish = pendingTasks[index];
+            } else {
+                taskToFinish = pendingTasks.find(x => x.nama.toLowerCase() === target.toLowerCase());
+            }
+
+            if (!taskToFinish) {
+                return reply(`❌ Nomor/Nama tugas *"${target}"* nggak ada di daftar pending.`);
+            }
+
+            // Update di database utama berdasarkan ID unik
+            const actualIndex = db.tugas.findIndex(t => t.id === taskToFinish.id);
+            db.tugas[actualIndex].status = 'SELESAI';
+
+            await fs.writeFile(dbPath, JSON.stringify(db, null, 2));
+
+            await reply(`🎉 *Mantap!* Tugas *${taskToFinish.nama}* sudah ditandai SELESAI.`);
+
+        } catch (err) {
+            console.error(err);
+            await reply("❌ Gagal memproses data.");
         }
-
-        if (index === -1 || !db.tugas[index]) return sock.sendMessage(from, { text: '❌ Tugas tidak ditemukan.' });
-
-        db.tugas[index].status = 'SELESAI';
-        fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-
-        await sock.sendMessage(from, { text: `🎉 Tugas *${db.tugas[index].nama}* ditandai SELESAI!` });
     }
 };

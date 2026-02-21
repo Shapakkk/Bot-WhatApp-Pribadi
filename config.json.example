@@ -1,0 +1,18 @@
+{
+    "phoneNumber": "628xxx",
+    "botName": "BOT-PRIBADI-GUE",
+    "ownerName": "NamaLo",
+    "prefix": ".",
+    "ownerNumber": "628xxx@s.whatsapp.net",
+    "targetGroupId": "xxx@g.us",
+    "timezone": "Asia/Makassar",
+    "autoRead": true,
+    "listDompet": ["Tunai", "Bank", "E-Wallet"],
+    "discord": {
+        "webhookPemasukan": "",
+        "webhookPengeluaran": "",
+        "webhookAkademik": "",
+        "webhookBackup": "",
+        "myDiscordId": ""
+    }
+}

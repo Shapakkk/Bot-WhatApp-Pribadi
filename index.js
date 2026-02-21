@@ -8,17 +8,16 @@ const {
 const { Boom } = require('@hapi/boom');
 const P = require('pino');
 const fs = require('fs');
-const path = require('path');
 const moment = require('moment-timezone');
-const { handler } = require('./handler');
+const { handler, loadCommands } = require('./handler');
 
-// 1. Logger Level Fatal (Biar terminal gak nyampah)
 const logger = P({ level: 'fatal' });
 
 async function startBot() {
-    // Jalankan loader command
-    const { loadCommands } = require('./handler'); 
+    // 1. Load semua command saat start
+    console.log("[ SYSTEM ] Loading commands...");
     loadCommands('commands');
+    console.log(`[ SYSTEM ] ${global.commands.size} commands loaded.`);
 
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     const { version } = await fetchLatestBaileysVersion();
@@ -31,38 +30,18 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, logger)
         },
         printQRInTerminal: false,
-        browser: ['Ubuntu', 'Chrome', '20.0.04'],
-        patchMessageBeforeSending: (message) => {
-            const requiresPatch = !!(
-                message.buttonsMessage ||
-                message.templateMessage ||
-                message.listMessage
-            );
-            if (requiresPatch) {
-                message = {
-                    viewOnceMessage: {
-                        message: {
-                            messageContextInfo: {
-                                deviceListMetadata: {},
-                                deviceListMetadataVersion: 2
-                            },
-                            ...message
-                        }
-                    }
-                };
-            }
-            return message;
-        }
+        markOnlineOnConnect: true,
+        browser: ['STB-Linux', 'Chrome', '20.0.04']
     });
 
-    const config = JSON.parse(fs.readFileSync('./config.json'));
+    const config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
                 const code = await sock.requestPairingCode(config.phoneNumber);
                 console.log(`\n[ PAIRING CODE ]: ${code}\n`);
-            } catch {}
+            } catch (e) {}
         }, 5000);
     }
 
@@ -76,12 +55,16 @@ async function startBot() {
                 : true;
             if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log(`[ ONLINE ] Berhasil sebagai ${config.botName}`);
+            console.log(`\n[ ONLINE ] Berhasil masuk sebagai ${config.botName}`);
+            
             // Jalankan Scheduler
             try {
                 const { runScheduler } = require('./lib/scheduler');
                 runScheduler(sock);
-            } catch (e) {}
+                console.log("[ SYSTEM ] Scheduler Aktif.");
+            } catch (e) {
+                console.log("[ SYSTEM ] Gagal menjalankan scheduler.");
+            }
         }
     });
 
@@ -89,9 +72,7 @@ async function startBot() {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
         
-        // Auto Read dari config
         if (config.autoRead) await sock.readMessages([msg.key]);
-
         await handler(sock, msg);
     });
 }
